@@ -280,13 +280,13 @@ LAKE GENEVA, WI 53147</textarea>
 
     // ---- title block (centred to the RIGHT of the corner ribbon; no drop shadow) ----
     const cx = 648;
-    let y = 80;
+    let y = 76;
     ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.fillStyle = YELLOW;
 
     if(v.kind.trim() || v.code.trim()){
       ctx.font = '700 42px '+SANS;
-      ctx.fillText((v.kind.trim()+' '+v.code.trim()).trim(), cx, y); y += 54;
+      ctx.fillText((v.kind.trim()+' '+v.code.trim()).trim(), cx, y); y += 72;
     }
     // title: shrink to fit one line like the real B2, wrap only if it still won't fit
     const tt = v.title.trim(); const maxTW = CW-448;
