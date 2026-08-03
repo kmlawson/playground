@@ -47,6 +47,9 @@
   .hint{ font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.5; }
   .colorpick{ width:48px; height:36px; padding:2px; border:1px solid var(--line);
               border-radius:8px; background:#161210; flex:0 0 auto; }
+  .check{ display:flex; align-items:center; gap:9px; margin:0; cursor:pointer;
+          text-transform:none; letter-spacing:0; font-size:14px; color:var(--ink); }
+  .check input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
 
   /* Wide screens: two columns, and pin the preview while scrolling the controls. */
   @media (min-width: 920px){
@@ -146,6 +149,10 @@ BASIC SET</textarea>
         <label>Ribbon colour</label>
         <input id="ribboncol" class="colorpick" type="color" value="#d9761c">
       </div>
+    </div>
+
+    <div class="grp">
+      <label class="check"><input type="checkbox" id="iggy"> Square it for Instagram (black bars left &amp; right)</label>
     </div>
 
     <details>
@@ -276,6 +283,14 @@ LAKE GENEVA, WI 53147</textarea>
     const YELLOW = v.textcol || '#f6d21c';    // title/code/product colour (user-set)
     const ORANGE = v.ribboncol || '#d9761c';  // ribbon band colour (user-set)
 
+    // Instagram square: widen the canvas to 1:1 and pillarbox the cover in black.
+    const iggy = el('iggy') && el('iggy').checked;
+    const totalW = iggy ? CH : CW;                 // square when on (height stays CH)
+    const padX = Math.round((totalW - CW) / 2);
+    if(cv.width !== totalW) cv.width = totalW;      // resizing clears the canvas
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, totalW, CH);
+    ctx.save(); ctx.translate(padX, 0);            // draw the whole cover shifted right
+
     ctx.fillStyle = v.bg; ctx.fillRect(0,0,CW,CH);
 
     // ---- title block (centred to the RIGHT of the corner ribbon; no drop shadow) ----
@@ -371,10 +386,13 @@ LAKE GENEVA, WI 53147</textarea>
     // code sits on the magenta corner triangle, above the band
     ctx.fillStyle=YELLOW; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     ctx.font='800 60px '+SANS; ctx.fillText(v.code.trim(), 34, 78);
+
+    ctx.restore();   // end pillarbox translate
   }
 
   // ---- wiring ----------------------------------------------------------
   ids.forEach(id => el(id).addEventListener('input', render));
+  el('iggy').addEventListener('change', render);
   el('img').addEventListener('change', e=>{
     const f = e.target.files && e.target.files[0]; if(!f) return;
     const fr = new FileReader();
@@ -415,6 +433,7 @@ LAKE GENEVA, WI 53147</textarea>
   });
   el('reset').addEventListener('click', ()=>{
     ids.forEach(id => el(id).value = DEFAULTS[id]);
+    el('iggy').checked = false;
     el('prod').value = rand4(); art=null; el('img').value=''; render();
   });
 
