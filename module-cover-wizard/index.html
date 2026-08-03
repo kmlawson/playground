@@ -199,11 +199,10 @@ LAKE GENEVA, WI 53147</textarea>
     </details>
 
     <div class="actions">
-      <button class="btn-dl" id="dl">Download PNG</button>
-      <button class="btn-open" id="open" type="button">Open in new tab</button>
+      <button class="btn-dl" id="open" type="button">Open Image in New Tab</button>
       <button class="btn-reset" id="reset" type="button">Reset</button>
     </div>
-    <div class="hint" id="iohint" style="display:none"><b>Save PNG</b> opens the iOS share sheet — choose <b>“Save Image”</b> to add it to Photos (iOS Safari blocks direct file downloads, so this is the way). <b>Open in new tab</b> also works: long-press the image there → “Save to Photos”.</div>
+    <div class="hint" id="iohint">Opens the finished cover as an image in a new tab. <b>On iPhone/iPad:</b> long-press it → “Save to Photos”. <b>On a computer:</b> right-click → “Save Image As…”. (It all runs in your browser — there’s no server — and iOS Safari blocks direct file downloads, which is why saving works this way.)</div>
     <div class="hint">Homage / parody generator. “TSR”, “Dungeons &amp; Dragons” and the original trade dress belong to Wizards of the Coast; use the output for fun, not to pass anything off as a genuine TSR product.</div>
   </div>
 </div>
@@ -446,33 +445,10 @@ LAKE GENEVA, WI 53147</textarea>
 
   el('reroll').addEventListener('click', ()=>{ el('prod').value = rand4(); render(); });
 
-  // Build the PNG blob synchronously (no server involved) so navigator.share still
-  // has the user-gesture activation iOS requires.
-  function dataURLtoBlob(d){
-    const [meta,b64]=d.split(','), mime=(meta.match(/:(.*?);/)||[])[1]||'image/png';
-    const bin=atob(b64), u8=new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
-    return new Blob([u8],{type:mime});
-  }
   function fileName(){ return (el('code').value.trim()||'module').replace(/[^\w.-]+/g,'_')+'_cover.png'; }
 
-  el('dl').addEventListener('click', ()=>{
-    const name=fileName();
-    const blob=dataURLtoBlob(cv.toDataURL('image/png'));
-    const file=new File([blob], name, {type:'image/png'});
-    // iOS: use the native Share Sheet — it has a real "Save Image" (to Photos) action.
-    if(isIOS && navigator.canShare && navigator.canShare({files:[file]})){
-      navigator.share({files:[file], title:name}).catch(()=>{});
-      return;
-    }
-    // Everything else: real file download.
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download=name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 60000);
-  });
-
-  // Open the PNG as a real <img> in a new tab, so long-press → "Save to Photos" works.
+  // Open the PNG as a real <img> in a new tab, so it can be saved:
+  // iOS → long-press → "Save to Photos"; desktop → right-click → "Save Image As…".
   el('open').addEventListener('click', ()=>{
     const dataURL=cv.toDataURL('image/png');
     const w=window.open('', '_blank');
@@ -492,7 +468,6 @@ LAKE GENEVA, WI 53147</textarea>
   // Fonts may load a beat after first paint; re-render once ready for a faithful match.
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(render);
 
-  if(isIOS){ el('iohint').style.display='block'; el('dl').textContent='Save PNG'; }
   el('prod').value = rand4();   // random 4-digit product number on load
   render();
 })();
