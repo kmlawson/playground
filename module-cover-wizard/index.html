@@ -48,7 +48,7 @@
 </head>
 <body>
 <header>
-  <h1>🐉 Module Cover Wizard</h1>
+  <h1>Module Cover Wizard</h1>
   <p>Upload art, set a code &amp; title, and it renders a fake 1979-TSR-style module cover after <b>B2 · The Keep on the Borderlands</b>. 100% client-side — your image never leaves the browser. Export as PNG.</p>
 </header>
 
@@ -140,14 +140,14 @@ LAKE GENEVA, WI 53147</textarea>
           <label>Product #</label>
           <div class="row">
             <input id="prod" type="text" value="9034">
-            <button class="btn-mini" id="reroll" title="Random 4-digit number" type="button">🎲</button>
+            <button class="btn-mini" id="reroll" title="Random 4-digit number" type="button">Random</button>
           </div>
         </div>
       </div>
     </details>
 
     <div class="actions">
-      <button class="btn-dl" id="dl">⬇ Download PNG</button>
+      <button class="btn-dl" id="dl">Download PNG</button>
       <button class="btn-reset" id="reset" type="button">Reset</button>
     </div>
     <div class="hint">Homage / parody generator. “TSR”, “Dungeons &amp; Dragons” and the original trade dress belong to Wizards of the Coast; use the output for fun, not to pass anything off as a genuine TSR product.</div>
@@ -169,7 +169,8 @@ LAKE GENEVA, WI 53147</textarea>
   const DEFAULTS = {}; ids.forEach(id => DEFAULTS[id] = el(id).value);
 
   // Real Helvetica ships on macOS; Arial is the metric-compatible fallback elsewhere.
-  const SANS = "'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif";
+  // TSR set these covers in Futura (Bold for titles, Book for body); it ships on macOS.
+  const SANS = "'Futura', 'Futura PT', 'Futura Std', 'Century Gothic', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif";
   const YELLOW = '#f6d21c', ORANGE = '#d9761c', WHITE = '#f4ece0', DARK = '#3c0f29';
 
   function rand4(){ return String(Math.floor(1000 + Math.random()*9000)); }
@@ -268,7 +269,7 @@ LAKE GENEVA, WI 53147</textarea>
       ctx.fillStyle='#171310'; ctx.fillRect(artX,artY,artW,artH);
       ctx.fillStyle='#6b5f4d'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.font='600 30px system-ui, sans-serif';
-      ctx.fillText('⬆  Upload your cover artwork', CW/2, artY+artH/2-14);
+      ctx.fillText('Upload your cover artwork', CW/2, artY+artH/2-14);
       ctx.font='400 20px system-ui, sans-serif';
       ctx.fillText('it will be cropped to fill this frame', CW/2, artY+artH/2+22);
       ctx.textBaseline='alphabetic';
@@ -307,19 +308,25 @@ LAKE GENEVA, WI 53147</textarea>
       ctx.fillText(v.prod.trim(), 1122, 1491);
     }
 
-    // ---- corner ribbon + code (on top) ----
-    const leg = 300;
+    // ---- corner RIBBON (diagonal band) + code, on top ----
+    // Measured from B2: band lies between the anti-diagonals x+y=RA (inner) and x+y=RB (outer);
+    // the magenta corner triangle inside it carries the code.
+    const RA = 248, RB = 336;
     ctx.fillStyle = ORANGE;
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(leg,0); ctx.lineTo(0,leg); ctx.closePath(); ctx.fill();
-    ctx.save(); ctx.translate(132,132); ctx.rotate(-Math.PI/4);
+    ctx.beginPath();
+    ctx.moveTo(RA,0); ctx.lineTo(RB,0); ctx.lineTo(0,RB); ctx.lineTo(0,RA);
+    ctx.closePath(); ctx.fill();
+    // ribbon text, centred on the band, running along it
+    ctx.save(); ctx.translate((RA+RB)/4, (RA+RB)/4); ctx.rotate(-Math.PI/4);
     ctx.fillStyle=DARK; ctx.textAlign='center'; ctx.textBaseline='middle';
     const rlines = v.ribbon.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,2);
-    ctx.font='800 21px '+SANS;
+    ctx.font='700 20px '+SANS;
     if(rlines.length===1) ctx.fillText(rlines[0],0,0);
-    else { ctx.fillText(rlines[0]||'',0,-14); ctx.fillText(rlines[1]||'',0,14); }
+    else { ctx.fillText(rlines[0]||'',0,-12); ctx.fillText(rlines[1]||'',0,12); }
     ctx.restore();
+    // code sits on the magenta corner triangle, above the band
     ctx.fillStyle=YELLOW; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-    ctx.font='800 62px '+SANS; ctx.fillText(v.code.trim(), 30, 74);
+    ctx.font='800 60px '+SANS; ctx.fillText(v.code.trim(), 34, 78);
   }
 
   // ---- wiring ----------------------------------------------------------
