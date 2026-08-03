@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module Cover Wizard — B2-style fake TSR cover maker</title>
+<style>
+  :root{ --bg:#181410; --panel:#221c16; --line:#3a3025; --ink:#efe7d8; --soft:#c3b8a4;
+         --muted:#8a7d68; --accent:#c8a04a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink);
+        font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header{ padding:18px 22px; border-bottom:1px solid var(--line);
+          background:linear-gradient(180deg,#2a2118,#181410); }
+  header h1{ margin:0; font-size:20px; color:var(--accent); letter-spacing:.3px; }
+  header p{ margin:4px 0 0; font-size:13px; color:var(--muted); max-width:70ch; }
+  .layout{ display:flex; gap:24px; align-items:flex-start; max-width:1500px; margin:0 auto;
+           padding:22px; flex-wrap:wrap; }
+  .stage{ flex:1 1 460px; min-width:320px; position:sticky; top:14px; }
+  .stage canvas{ width:100%; height:auto; border-radius:6px; box-shadow:0 12px 40px #000a; background:#000; }
+  .panel{ flex:1 1 360px; min-width:300px; background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:18px 18px 22px; }
+  .grp{ margin-bottom:15px; }
+  .grp>label{ display:block; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+              color:var(--muted); margin-bottom:6px; }
+  input[type=text], textarea, input[type=number]{ width:100%; padding:9px 11px; font-size:14px;
+     border:1px solid var(--line); border-radius:8px; background:#161210; color:var(--ink);
+     font-family:inherit; resize:vertical; }
+  input:focus, textarea:focus{ outline:2px solid var(--accent); border-color:transparent; }
+  .file input{ font-size:13px; color:var(--soft); }
+  details{ border-top:1px solid var(--line); margin-top:6px; padding-top:10px; }
+  summary{ cursor:pointer; font-size:13px; color:var(--accent); margin-bottom:10px; }
+  .row{ display:flex; gap:10px; }
+  .row>div{ flex:1; }
+  .swatches{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .sw{ width:26px; height:26px; border-radius:6px; border:2px solid #0006; cursor:pointer; }
+  .sw:hover{ transform:scale(1.08); }
+  .actions{ display:flex; gap:10px; margin-top:10px; }
+  button{ padding:12px; font-size:14px; font-weight:600; border:none; border-radius:9px; cursor:pointer; }
+  .btn-dl{ flex:1; background:var(--accent); color:#1a140a; }
+  .btn-dl:hover{ background:#d8b25c; }
+  .btn-reset{ background:#2e2620; color:var(--soft); border:1px solid var(--line); }
+  .btn-mini{ background:#2e2620; color:var(--soft); border:1px solid var(--line); padding:9px 12px; }
+  .hint{ font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.5; }
+  .colorpick{ width:48px; height:36px; padding:2px; border:1px solid var(--line);
+              border-radius:8px; background:#161210; flex:0 0 auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐉 Module Cover Wizard</h1>
+  <p>Upload art, set a code &amp; title, and it renders a fake 1979-TSR-style module cover after <b>B2 · The Keep on the Borderlands</b>. 100% client-side — your image never leaves the browser. Export as PNG.</p>
+</header>
+
+<div class="layout">
+  <div class="stage">
+    <canvas id="cv" width="1200" height="1584"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="grp file">
+      <label>Center artwork (upload)</label>
+      <input id="img" type="file" accept="image/*">
+      <div class="hint">Cropped to fill the cover frame; portrait or landscape both work.</div>
+    </div>
+
+    <div class="row">
+      <div class="grp" style="flex:0 0 40%">
+        <label>Module code</label>
+        <input id="code" type="text" value="B2" maxlength="12">
+      </div>
+      <div class="grp">
+        <label>“Dungeon Module” prefix</label>
+        <input id="kind" type="text" value="Dungeon Module">
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>Title</label>
+      <input id="title" type="text" value="The Keep on the Borderlands">
+    </div>
+
+    <div class="row">
+      <div class="grp">
+        <label>Author</label>
+        <input id="author" type="text" value="Gary Gygax">
+      </div>
+      <div class="grp" style="flex:0 0 38%">
+        <label>Character levels</label>
+        <input id="levels" type="text" value="1-3">
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>Corner ribbon (2 lines)</label>
+      <textarea id="ribbon" rows="2">FOR DUNGEONS &amp; DRAGONS
+BASIC SET</textarea>
+    </div>
+
+    <div class="grp">
+      <label>Starburst seal text</label>
+      <input id="star" type="text" value="Special Instructional Module">
+      <div class="hint">White spiky seal, bottom-right. 2–4 words fit best.</div>
+    </div>
+
+    <div class="grp">
+      <label>Cover colour</label>
+      <div class="row" style="align-items:center">
+        <input id="bg" class="colorpick" type="color" value="#7c1a52">
+        <div class="swatches" id="swatches"></div>
+      </div>
+    </div>
+
+    <details>
+      <summary>Optional details (subtitle, back text, publisher…)</summary>
+      <div class="grp">
+        <label>Subtitle override <span style="text-transform:none;color:var(--muted)">(blank → “Introductory module for character levels …”)</span></label>
+        <input id="subtitle" type="text" value="" placeholder="INTRODUCTORY MODULE FOR CHARACTER LEVELS 1-3">
+      </div>
+      <div class="grp">
+        <label>Back-cover blurb (justified)</label>
+        <textarea id="blurb" rows="7">This module includes a cover folder with maps and a complete description booklet to form a ready-made scenario for BASIC DUNGEONS &amp; DRAGONS®. It has been specially designed for use by beginning Dungeon Masters so that they may begin play with a minimum of preparations. With minor modifications, it is also suitable for use with ADVANCED DUNGEONS &amp; DRAGONS™.
+
+Within are many features to aid novice players and Dungeon Masters: legends, history and background information, a list of adventuring characters, tips on how to be an effective Dungeon Master, plus an interesting area for characters to base themselves in (the Keep) before setting out to explore the Caves of Chaos!
+
+If you enjoy this module, look for more releases in the D&amp;D® family from TSR, The Game Wizards.</textarea>
+      </div>
+      <div class="grp">
+        <label>Publisher block</label>
+        <textarea id="pub" rows="3">TSR Games
+POB 756
+LAKE GENEVA, WI 53147</textarea>
+      </div>
+      <div class="row">
+        <div class="grp">
+          <label>Fine print</label>
+          <input id="fine" type="text" value="PRINTED IN U.S.A.">
+        </div>
+        <div class="grp" style="flex:0 0 42%">
+          <label>Product #</label>
+          <div class="row">
+            <input id="prod" type="text" value="9034">
+            <button class="btn-mini" id="reroll" title="Random 4-digit number" type="button">🎲</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <div class="actions">
+      <button class="btn-dl" id="dl">⬇ Download PNG</button>
+      <button class="btn-reset" id="reset" type="button">Reset</button>
+    </div>
+    <div class="hint">Homage / parody generator. “TSR”, “Dungeons &amp; Dragons” and the original trade dress belong to Wizards of the Coast; use the output for fun, not to pass anything off as a genuine TSR product.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const CW = cv.width, CH = cv.height;
+  let art = null;
+
+  const el = id => document.getElementById(id);
+  const ids = ['code','kind','title','author','levels','ribbon','star','bg','subtitle','blurb','pub','fine','prod'];
+  const DEFAULTS = {}; ids.forEach(id => DEFAULTS[id] = el(id).value);
+
+  // Real Helvetica ships on macOS; Arial is the metric-compatible fallback elsewhere.
+  const SANS = "'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif";
+  const YELLOW = '#f6d21c', ORANGE = '#d9761c', WHITE = '#f4ece0', DARK = '#3c0f29';
+
+  function rand4(){ return String(Math.floor(1000 + Math.random()*9000)); }
+
+  // ---- text helpers ----------------------------------------------------
+  function wrap(text, maxW){
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const lines = []; let line = '';
+    for(const w of words){
+      const t = line ? line+' '+w : w;
+      if(ctx.measureText(t).width > maxW && line){ lines.push(line); line = w; }
+      else line = t;
+    }
+    if(line) lines.push(line);
+    return lines.length ? lines : [''];
+  }
+  function drawJustified(text, x, y, w, lineH){
+    const paras = String(text).split(/\n{2,}/);
+    for(let p=0;p<paras.length;p++){
+      const lines = wrap(paras[p].replace(/\n/g,' '), w);
+      for(let i=0;i<lines.length;i++){
+        const last = (i === lines.length-1);
+        const words = lines[i].split(' ');
+        if(last || words.length === 1){ ctx.textAlign='left'; ctx.fillText(lines[i], x, y); }
+        else {
+          const wordsW = words.reduce((s,ww)=>s+ctx.measureText(ww).width,0);
+          const gap = (w - wordsW)/(words.length-1);
+          let cx = x; ctx.textAlign='left';
+          for(const ww of words){ ctx.fillText(ww, cx, y); cx += ctx.measureText(ww).width + gap; }
+        }
+        y += lineH;
+      }
+      y += lineH*0.5;
+    }
+    return y;
+  }
+  function drawCover(img,x,y,w,h){
+    const ir=img.width/img.height, br=w/h; let sw,sh,sx,sy;
+    if(ir>br){ sh=img.height; sw=sh*br; sx=(img.width-sw)/2; sy=0; }
+    else { sw=img.width; sh=sw/br; sx=0; sy=(img.height-sh)/2; }
+    ctx.drawImage(img,sx,sy,sw,sh,x,y,w,h);
+  }
+  function starPath(cx,cy,spikes,outer,inner){
+    ctx.beginPath();
+    for(let i=0;i<spikes*2;i++){
+      const r=(i%2)?inner:outer, a=Math.PI*i/spikes - Math.PI/2;
+      const px=cx+Math.cos(a)*r, py=cy+Math.sin(a)*r;
+      i?ctx.lineTo(px,py):ctx.moveTo(px,py);
+    }
+    ctx.closePath();
+  }
+  function wizard(x, base, s){
+    ctx.save(); ctx.translate(x, base); ctx.fillStyle=WHITE; ctx.strokeStyle=WHITE; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-30*s,0); ctx.lineTo(-14*s,-78*s); ctx.lineTo(14*s,-78*s); ctx.lineTo(30*s,0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,-86*s,9*s,0,7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-19*s,-84*s); ctx.lineTo(0,-132*s); ctx.lineTo(19*s,-84*s); ctx.closePath(); ctx.fill();
+    ctx.lineWidth=4*s; ctx.beginPath(); ctx.moveTo(30*s,-8*s); ctx.lineTo(44*s,-120*s); ctx.stroke();
+    [[44,-128,6],[62,-96,4],[26,-108,4]].forEach(([sx,sy,r])=>{ starPath(sx*s,sy*s,4,r*s,r*0.42*s); ctx.fill(); });
+    ctx.restore();
+  }
+
+  // ---- main render -----------------------------------------------------
+  function render(){
+    const v = {}; ids.forEach(id => v[id] = el(id).value);
+    const M = 50;
+
+    ctx.fillStyle = v.bg; ctx.fillRect(0,0,CW,CH);
+
+    // ---- title block (centred) ----
+    const cx = CW/2 + 18;
+    let y = 98;
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle = YELLOW;
+    ctx.shadowColor='rgba(0,0,0,.45)'; ctx.shadowOffsetX=2; ctx.shadowOffsetY=2;
+
+    if(v.kind.trim()){
+      ctx.font = '700 50px '+SANS;
+      ctx.fillText((v.kind.trim()+' '+v.code.trim()).trim(), cx, y); y += 60;
+    }
+    ctx.font = '800 68px '+SANS;
+    for(const l of wrap(v.title.trim(), CW-300)){ ctx.fillText(l, cx, y); y += 74; }
+    const byline = v.author.trim() ? 'by '+v.author.trim() : '';
+    if(byline){ ctx.font='700 40px '+SANS; y += 2; ctx.fillText(byline, cx, y); y += 54; }
+    const subtitle = (v.subtitle.trim() ||
+        (v.levels.trim() ? 'INTRODUCTORY MODULE FOR CHARACTER LEVELS '+v.levels.trim() : '')).toUpperCase();
+    if(subtitle){ ctx.font='700 33px '+SANS; ctx.fillText(subtitle, cx, y); y += 44; }
+    ctx.shadowColor='transparent'; ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
+
+    // ---- art frame ----
+    const artBottom = 992;
+    const artY = Math.max(356, y + 12);
+    const artX = M, artW = CW-2*M, artH = artBottom-artY;
+    ctx.fillStyle='#0c0a08'; ctx.fillRect(artX-6,artY-6,artW+12,artH+12);
+    ctx.strokeStyle='#e9dcc4'; ctx.lineWidth=3; ctx.strokeRect(artX-6,artY-6,artW+12,artH+12);
+    if(art){
+      ctx.save(); ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
+      drawCover(art, artX, artY, artW, artH); ctx.restore();
+    } else {
+      ctx.fillStyle='#171310'; ctx.fillRect(artX,artY,artW,artH);
+      ctx.fillStyle='#6b5f4d'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='600 30px system-ui, sans-serif';
+      ctx.fillText('⬆  Upload your cover artwork', CW/2, artY+artH/2-14);
+      ctx.font='400 20px system-ui, sans-serif';
+      ctx.fillText('it will be cropped to fill this frame', CW/2, artY+artH/2+22);
+      ctx.textBaseline='alphabetic';
+    }
+
+    // ---- back blurb (Helvetica italic, justified) ----
+    ctx.fillStyle = WHITE; ctx.font = 'italic 600 23px '+SANS;
+    drawJustified(v.blurb, M, artBottom+40, CW-2*M, 29);
+
+    // ---- footer: wizard + publisher (left) ----
+    const footBase = CH-58;
+    wizard(M+44, footBase, 1.0);
+    ctx.fillStyle=WHITE; ctx.textAlign='left';
+    const pubLines = v.pub.split('\n').filter(x=>x.length);
+    let py = footBase - 76;
+    pubLines.forEach((ln,i)=>{ ctx.font=(i===0?'700 ':'400 ')+'26px '+SANS; ctx.fillText(ln, M+108, py); py += 30; });
+    if(v.fine.trim()){ ctx.font='700 17px '+SANS; ctx.fillText(v.fine.trim().toUpperCase(), M+108, py+3); }
+
+    // ---- starburst seal (right) ----
+    const ssx = CW-206, ssy = CH-146;
+    starPath(ssx, ssy, 22, 110, 82);
+    ctx.fillStyle=WHITE; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#d8cbb2'; ctx.stroke();
+    ctx.save(); ctx.translate(ssx, ssy); ctx.rotate(-0.27);
+    ctx.fillStyle=DARK; ctx.textAlign='center'; ctx.textBaseline='middle';
+    let sw = v.star.trim().split(/\s+/).filter(Boolean); let slines;
+    if(sw.length<=3) slines = sw; else { const m=Math.ceil(sw.length/3); slines=[sw.slice(0,m).join(' '),sw.slice(m,2*m).join(' '),sw.slice(2*m).join(' ')]; }
+    if(!slines.length) slines=[''];
+    const fs = slines.length>=3 ? 25 : 29;
+    ctx.font='italic 700 '+fs+'px '+SANS;
+    const sy0 = -(slines.length-1)*fs*0.62;
+    slines.forEach((ln,i)=> ctx.fillText(ln, 0, sy0 + i*fs*1.22));
+    ctx.restore(); ctx.textBaseline='alphabetic';
+
+    // ---- product number (bottom-right) ----
+    if(v.prod.trim()){
+      ctx.fillStyle=YELLOW; ctx.textAlign='right'; ctx.font='700 32px '+SANS;
+      ctx.fillText(v.prod.trim(), CW-42, CH-28);
+    }
+
+    // ---- corner ribbon + code (on top) ----
+    const leg = 300;
+    ctx.fillStyle = ORANGE;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(leg,0); ctx.lineTo(0,leg); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = v.bg;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(96,0); ctx.lineTo(0,96); ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.translate(134,134); ctx.rotate(-Math.PI/4);
+    ctx.fillStyle=DARK; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const rlines = v.ribbon.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,2);
+    ctx.font='800 21px '+SANS;
+    if(rlines.length===1) ctx.fillText(rlines[0],0,0);
+    else { ctx.fillText(rlines[0]||'',0,-14); ctx.fillText(rlines[1]||'',0,14); }
+    ctx.restore();
+    ctx.fillStyle=YELLOW; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowOffsetX=2; ctx.shadowOffsetY=2;
+    ctx.font='800 62px '+SANS; ctx.fillText(v.code.trim(), 30, 74);
+    ctx.shadowColor='transparent'; ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
+  }
+
+  // ---- wiring ----------------------------------------------------------
+  ids.forEach(id => el(id).addEventListener('input', render));
+  el('img').addEventListener('change', e=>{
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    const fr = new FileReader();
+    fr.onload = () => { const im=new Image(); im.onload=()=>{ art=im; render(); }; im.src=fr.result; };
+    fr.readAsDataURL(f);
+  });
+
+  const SW = ['#7c1a52','#123a63','#1d5b3a','#6e1414','#20303a','#5a3a12','#2c2436','#111111'];
+  const swWrap = document.getElementById('swatches');
+  SW.forEach(c=>{ const d=document.createElement('div'); d.className='sw'; d.style.background=c;
+    d.title=c; d.addEventListener('click',()=>{ el('bg').value=c; render(); }); swWrap.appendChild(d); });
+
+  el('reroll').addEventListener('click', ()=>{ el('prod').value = rand4(); render(); });
+  el('dl').addEventListener('click', ()=>{
+    const a=document.createElement('a');
+    const code=(el('code').value.trim()||'module').replace(/[^\w.-]+/g,'_');
+    a.download = code+'_cover.png'; a.href = cv.toDataURL('image/png'); a.click();
+  });
+  el('reset').addEventListener('click', ()=>{
+    ids.forEach(id => el(id).value = DEFAULTS[id]);
+    el('prod').value = rand4(); art=null; el('img').value=''; render();
+  });
+
+  // Fonts may load a beat after first paint; re-render once ready for a faithful match.
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+
+  el('prod').value = rand4();   // random 4-digit product number on load
+  render();
+})();
+</script>
+</body>
+</html>
