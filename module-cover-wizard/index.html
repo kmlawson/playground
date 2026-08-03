@@ -50,6 +50,7 @@
   .check{ display:flex; align-items:center; gap:9px; margin:0; cursor:pointer;
           text-transform:none; letter-spacing:0; font-size:14px; color:var(--ink); }
   .check input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
+  input[type=range]{ width:100%; accent-color:var(--accent); margin:2px 0; }
 
   /* Wide screens: two columns, and pin the preview while scrolling the controls. */
   @media (min-width: 920px){
@@ -91,6 +92,12 @@
       <label>Center artwork (upload)</label>
       <input id="img" type="file" accept="image/*">
       <div class="hint">Cropped to fill the cover frame; portrait or landscape both work.</div>
+    </div>
+
+    <div class="grp" id="imgposgrp" style="display:none">
+      <label>Image position <span id="imgposax" style="text-transform:none;color:var(--muted)"></span></label>
+      <input type="range" id="imgpos" min="0" max="100" value="50">
+      <div class="hint">Slide to choose which part of a cropped image shows through the frame. Or drag the artwork in the preview.</div>
     </div>
 
     <div class="row">
@@ -256,11 +263,15 @@ LAKE GENEVA, WI 53147</textarea>
     }
     return y;
   }
-  function drawCover(img,x,y,w,h){
-    const ir=img.width/img.height, br=w/h; let sw,sh,sx,sy;
-    if(ir>br){ sh=img.height; sw=sh*br; sx=(img.width-sw)/2; sy=0; }
-    else { sw=img.width; sh=sw/br; sx=0; sy=(img.height-sh)/2; }
+  // off in [0,1] pans the crop along whichever axis is cropped (0.5 = centred).
+  // Returns which axis was cropped: 'y' (tall image), 'x' (wide), or '' (exact fit).
+  function drawCover(img,x,y,w,h,off){
+    off = (off==null)?0.5:Math.max(0,Math.min(1,off));
+    const ir=img.width/img.height, br=w/h; let sw,sh,sx,sy,axis='';
+    if(ir>br){ sh=img.height; sw=sh*br; sy=0; sx=(img.width-sw)*off; if(sw<img.width-0.5) axis='x'; }
+    else { sw=img.width; sh=sw/br; sx=0; sy=(img.height-sh)*off; if(sh<img.height-0.5) axis='y'; }
     ctx.drawImage(img,sx,sy,sw,sh,x,y,w,h);
+    return axis;
   }
   function starPath(cx,cy,spikes,outer,inner){
     ctx.beginPath();
@@ -323,8 +334,14 @@ LAKE GENEVA, WI 53147</textarea>
     ctx.strokeStyle='#e9dcc4'; ctx.lineWidth=3; ctx.strokeRect(artX-6,artY-6,artW+12,artH+12);
     if(art){
       ctx.save(); ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
-      drawCover(art, artX, artY, artW, artH); ctx.restore();
+      const off = (parseInt(el('imgpos').value,10) || 50) / 100;
+      const axis = drawCover(art, artX, artY, artW, artH, off); ctx.restore();
+      // show the reposition slider only when the image is actually cropped
+      el('imgposgrp').style.display = axis ? 'block' : 'none';
+      el('imgposax').textContent = axis==='y' ? '(drag / slide up ↔ down)'
+                                 : axis==='x' ? '(drag / slide left ↔ right)' : '';
     } else {
+      el('imgposgrp').style.display = 'none';
       ctx.fillStyle='#171310'; ctx.fillRect(artX,artY,artW,artH);
       ctx.fillStyle='#6b5f4d'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.font='600 30px system-ui, sans-serif';
@@ -393,12 +410,33 @@ LAKE GENEVA, WI 53147</textarea>
   // ---- wiring ----------------------------------------------------------
   ids.forEach(id => el(id).addEventListener('input', render));
   el('iggy').addEventListener('change', render);
+  el('imgpos').addEventListener('input', render);
   el('img').addEventListener('change', e=>{
     const f = e.target.files && e.target.files[0]; if(!f) return;
     const fr = new FileReader();
-    fr.onload = () => { const im=new Image(); im.onload=()=>{ art=im; render(); }; im.src=fr.result; };
+    fr.onload = () => { const im=new Image(); im.onload=()=>{ art=im; el('imgpos').value=50; render(); }; im.src=fr.result; };
     fr.readAsDataURL(f);
   });
+
+  // Drag the preview (desktop mouse) to reposition a cropped image; touch uses the slider.
+  const ART_H = 734, ART_W = 1000;
+  let drag = null;
+  cv.addEventListener('pointerdown', e=>{
+    if(!art || e.pointerType!=='mouse' || el('imgposgrp').style.display==='none') return;
+    drag = { x:e.clientX, y:e.clientY, off:(parseInt(el('imgpos').value,10)||50)/100,
+             ax: el('imgposax').textContent.indexOf('left')>=0 ? 'x' : 'y' };
+    cv.setPointerCapture(e.pointerId); cv.style.cursor='grabbing'; e.preventDefault();
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!drag) return;
+    const sc = cv.width / cv.getBoundingClientRect().width;   // client px -> canvas px
+    const d = drag.ax==='x' ? (e.clientX-drag.x)*sc/ART_W : (e.clientY-drag.y)*sc/ART_H;
+    const no = Math.max(0, Math.min(1, drag.off - d));        // drag up/left reveals more of that side
+    el('imgpos').value = Math.round(no*100); render();
+  });
+  const endDrag = ()=>{ drag=null; cv.style.cursor=''; };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
 
   const SW = ['#7c1a52','#459e63','#fe7902','#d4302a','#3a6ea5','#447498','#349286','#da9549','#6b2420','#2a2540'];
   const swWrap = document.getElementById('swatches');
@@ -433,7 +471,7 @@ LAKE GENEVA, WI 53147</textarea>
   });
   el('reset').addEventListener('click', ()=>{
     ids.forEach(id => el(id).value = DEFAULTS[id]);
-    el('iggy').checked = false;
+    el('iggy').checked = false; el('imgpos').value = 50;
     el('prod').value = rand4(); art=null; el('img').value=''; render();
   });
 
