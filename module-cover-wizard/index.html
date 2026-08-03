@@ -16,9 +16,9 @@
   header p{ margin:4px 0 0; font-size:13px; color:var(--muted); max-width:70ch; }
   .layout{ display:flex; gap:24px; align-items:flex-start; max-width:1500px; margin:0 auto;
            padding:22px; flex-wrap:wrap; }
-  .stage{ flex:1 1 460px; min-width:320px; position:sticky; top:14px; }
-  .stage canvas{ width:100%; height:auto; border-radius:6px; box-shadow:0 12px 40px #000a; background:#000; }
-  .panel{ flex:1 1 360px; min-width:300px; background:var(--panel); border:1px solid var(--line);
+  .stage{ flex:1 1 460px; min-width:0; }
+  .stage canvas{ display:block; width:100%; height:auto; border-radius:6px; box-shadow:0 12px 40px #000a; background:#000; }
+  .panel{ flex:1 1 360px; min-width:0; background:var(--panel); border:1px solid var(--line);
           border-radius:12px; padding:18px 18px 22px; }
   .grp{ margin-bottom:15px; }
   .grp>label{ display:block; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
@@ -44,6 +44,29 @@
   .hint{ font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.5; }
   .colorpick{ width:48px; height:36px; padding:2px; border:1px solid var(--line);
               border-radius:8px; background:#161210; flex:0 0 auto; }
+
+  /* Wide screens: two columns, and pin the preview while scrolling the controls. */
+  @media (min-width: 920px){
+    .stage{ position: sticky; top: 14px; }
+  }
+  /* Narrow / iPad-portrait / phones: single column, preview capped so it can't
+     cover the controls and you can always scroll to the form below it. */
+  @media (max-width: 919px){
+    .layout{ flex-direction: column; padding: 14px; gap: 16px; }
+    .stage, .panel{ width: 100%; }
+    .stage canvas{ width: auto; max-width: 100%; max-height: 64vh; margin: 0 auto; }
+  }
+  @media (max-width: 560px){
+    header{ padding: 14px 16px; }
+    header h1{ font-size: 18px; }
+    .layout{ padding: 10px; }
+    .panel{ padding: 14px; }
+    .stage canvas{ max-height: 56vh; }
+  }
+  /* keep iOS Safari from auto-zooming inputs (needs >=16px) and avoid overflow */
+  @media (max-width: 560px){
+    input[type=text], textarea, input[type=number]{ font-size: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -289,8 +312,8 @@ LAKE GENEVA, WI 53147</textarea>
     }
 
     // ---- back blurb (Helvetica italic, justified) ----
-    ctx.fillStyle = WHITE; ctx.font = 'italic 600 20px '+SANS;
-    drawJustified(v.blurb, artX, artBottom+34, artW, 26);
+    ctx.fillStyle = WHITE; ctx.font = 'italic 600 18px '+SANS;
+    drawJustified(v.blurb, artX, artBottom+54, artW, 23);
 
     // ---- footer: wizard + publisher (left), at B2 positions ----
     wizard(181, 1492, 1.0, v.bg);
