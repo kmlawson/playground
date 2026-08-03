@@ -447,8 +447,7 @@ LAKE GENEVA, WI 53147</textarea>
 
   function fileName(){ return (el('code').value.trim()||'module').replace(/[^\w.-]+/g,'_')+'_cover.png'; }
 
-  // Open the PNG as a real <img> in a new tab, so it can be saved:
-  // iOS → long-press → "Save to Photos"; desktop → right-click → "Save Image As…".
+  // Open the PNG as a real <img> in a new tab (client-side; no server).
   el('open').addEventListener('click', ()=>{
     const dataURL=cv.toDataURL('image/png');
     const w=window.open('', '_blank');
