@@ -37,8 +37,11 @@
   .sw:hover{ transform:scale(1.08); }
   .actions{ display:flex; gap:10px; margin-top:10px; }
   button{ padding:12px; font-size:14px; font-weight:600; border:none; border-radius:9px; cursor:pointer; }
-  .btn-dl{ flex:1; background:var(--accent); color:#1a140a; }
+  .actions{ flex-wrap:wrap; }
+  .btn-dl{ flex:1 1 140px; background:var(--accent); color:#1a140a; }
   .btn-dl:hover{ background:#d8b25c; }
+  .btn-open{ flex:1 1 140px; background:#2e2620; color:var(--accent); border:1px solid var(--accent); }
+  .btn-open:hover{ background:#3a3126; }
   .btn-reset{ background:#2e2620; color:var(--soft); border:1px solid var(--line); }
   .btn-mini{ background:#2e2620; color:var(--soft); border:1px solid var(--line); padding:9px 12px; }
   .hint{ font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.5; }
@@ -182,8 +185,10 @@ LAKE GENEVA, WI 53147</textarea>
 
     <div class="actions">
       <button class="btn-dl" id="dl">Download PNG</button>
+      <button class="btn-open" id="open" type="button">Open in new tab</button>
       <button class="btn-reset" id="reset" type="button">Reset</button>
     </div>
+    <div class="hint" id="iohint" style="display:none">On iPhone/iPad the image opens in a new tab — <b>long-press it and choose “Save to Photos”</b> (Safari doesn’t allow direct file downloads).</div>
     <div class="hint">Homage / parody generator. “TSR”, “Dungeons &amp; Dragons” and the original trade dress belong to Wizards of the Coast; use the output for fun, not to pass anything off as a genuine TSR product.</div>
   </div>
 </div>
@@ -193,6 +198,9 @@ LAKE GENEVA, WI 53147</textarea>
   "use strict";
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const CW = cv.width, CH = cv.height;
+  // iOS/iPadOS Safari ignores <a download> for canvas images — detect it and open instead.
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let art = null;
   const wizImg = new Image(); let wizReady=false;
   wizImg.onload = ()=>{ wizReady=true; render(); };
@@ -272,27 +280,27 @@ LAKE GENEVA, WI 53147</textarea>
 
     // ---- title block (centred to the RIGHT of the corner ribbon; no drop shadow) ----
     const cx = 648;
-    let y = 82;
+    let y = 80;
     ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.fillStyle = YELLOW;
 
     if(v.kind.trim() || v.code.trim()){
-      ctx.font = '700 46px '+SANS;
-      ctx.fillText((v.kind.trim()+' '+v.code.trim()).trim(), cx, y); y += 52;
+      ctx.font = '700 42px '+SANS;
+      ctx.fillText((v.kind.trim()+' '+v.code.trim()).trim(), cx, y); y += 54;
     }
     // title: shrink to fit one line like the real B2, wrap only if it still won't fit
     const tt = v.title.trim(); const maxTW = CW-448;
-    let tf = 62; ctx.font = '800 '+tf+'px '+SANS;
-    while(tf>40 && ctx.measureText(tt).width>maxTW){ tf-=2; ctx.font='800 '+tf+'px '+SANS; }
+    let tf = 57; ctx.font = '800 '+tf+'px '+SANS;
+    while(tf>38 && ctx.measureText(tt).width>maxTW){ tf-=2; ctx.font='800 '+tf+'px '+SANS; }
     const tLines = (ctx.measureText(tt).width>maxTW) ? wrap(tt,maxTW) : [tt];
-    const tLH = Math.round(tf*1.05);
+    const tLH = Math.round(tf*1.18);
     for(const l of tLines){ ctx.fillText(l, cx, y); y += tLH; }
-    y += 6;
+    y += 12;
     const byline = v.author.trim() ? 'by '+v.author.trim() : '';
-    if(byline){ ctx.font='700 37px '+SANS; ctx.fillText(byline, cx, y); y += 46; }
+    if(byline){ ctx.font='700 34px '+SANS; ctx.fillText(byline, cx, y); y += 48; }
     const subtitle = (v.subtitle.trim() ||
         (v.levels.trim() ? 'INTRODUCTORY MODULE FOR CHARACTER LEVELS '+v.levels.trim() : '')).toUpperCase();
-    if(subtitle){ ctx.font='700 30px '+SANS; ctx.fillText(subtitle, cx, y); y += 38; }
+    if(subtitle){ ctx.font='700 28px '+SANS; ctx.fillText(subtitle, cx, y); y += 36; }
 
     // ---- art frame (exact B2 proportions: x 8.4%–92%, y 19.9%–67.6%, aspect 1.363) ----
     const artX = 100, artW = 1000, artY = 307, artBottom = 1041, artH = artBottom - artY;
@@ -380,10 +388,30 @@ LAKE GENEVA, WI 53147</textarea>
     d.title=c; d.addEventListener('click',()=>{ el('bg').value=c; render(); }); swWrap.appendChild(d); });
 
   el('reroll').addEventListener('click', ()=>{ el('prod').value = rand4(); render(); });
+  function openInTab(url){ const w = window.open('', '_blank'); if(w) w.location = url; else window.open(url, '_blank'); }
   el('dl').addEventListener('click', ()=>{
-    const a=document.createElement('a');
     const code=(el('code').value.trim()||'module').replace(/[^\w.-]+/g,'_');
-    a.download = code+'_cover.png'; a.href = cv.toDataURL('image/png'); a.click();
+    // pre-open synchronously on iOS so the (async) blob isn't popup-blocked
+    const w = isIOS ? window.open('', '_blank') : null;
+    cv.toBlob(b=>{
+      const url = URL.createObjectURL(b);
+      if(isIOS){
+        // Safari won't honour <a download>; show the PNG so the user can long-press → Save to Photos
+        if(w) w.location = url; else openInTab(url);
+      } else {
+        const a=document.createElement('a'); a.href=url; a.download=code+'_cover.png';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    }, 'image/png');
+  });
+  el('open').addEventListener('click', ()=>{
+    const w = window.open('', '_blank');   // sync open avoids popup blocking
+    cv.toBlob(b=>{
+      const u = URL.createObjectURL(b);
+      if(w) w.location = u; else openInTab(u);
+      setTimeout(()=>URL.revokeObjectURL(u), 60000);
+    }, 'image/png');
   });
   el('reset').addEventListener('click', ()=>{
     ids.forEach(id => el(id).value = DEFAULTS[id]);
@@ -393,6 +421,7 @@ LAKE GENEVA, WI 53147</textarea>
   // Fonts may load a beat after first paint; re-render once ready for a faithful match.
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(render);
 
+  if(isIOS){ el('iohint').style.display='block'; el('dl').textContent='Save PNG'; }
   el('prod').value = rand4();   // random 4-digit product number on load
   render();
 })();
