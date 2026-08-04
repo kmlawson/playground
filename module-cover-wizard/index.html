@@ -26,7 +26,13 @@
   input[type=text], textarea, input[type=number]{ width:100%; padding:9px 11px; font-size:14px;
      border:1px solid var(--line); border-radius:8px; background:#161210; color:var(--ink);
      font-family:inherit; resize:vertical; }
-  input:focus, textarea:focus{ outline:2px solid var(--accent); border-color:transparent; }
+  select{ width:100%; padding:9px 11px; font-size:14px; border:1px solid var(--line);
+     border-radius:8px; background:#161210; color:var(--ink); font-family:inherit; }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--accent); border-color:transparent; }
+  .sub{ margin-top:10px; }
+  .sub>label{ display:block; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase;
+              color:var(--muted); margin-bottom:4px; }
+  .val{ color:var(--soft); text-transform:none; letter-spacing:0; float:right; }
   .file input{ font-size:13px; color:var(--soft); }
   details{ border-top:1px solid var(--line); margin-top:6px; padding-top:10px; }
   summary{ cursor:pointer; font-size:13px; color:var(--accent); margin-bottom:10px; }
@@ -99,6 +105,51 @@
       <label>Image position <span id="imgposax" style="text-transform:none;color:var(--muted)"></span></label>
       <input type="range" id="imgpos" min="0" max="100" value="50">
       <div class="hint">Slide to choose which part of a cropped image shows through the frame. Or drag the artwork in the preview.</div>
+    </div>
+
+    <div class="grp" id="fxgrp" style="display:none">
+      <label>Art filter</label>
+      <select id="fx">
+        <option value="none">None — photo as-is</option>
+        <option value="inked">Inked — posterised colour + ink contour (B2 / X1)</option>
+        <option value="spot">Spot-colour line — one ink on tinted stock (G1 / D3)</option>
+        <option value="wash">Wash — watercolour bleed + edge pooling</option>
+        <option value="oil">Oil — Kuwahara brush patches</option>
+      </select>
+
+      <div class="sub" data-fx="inked spot wash oil">
+        <label>Strength <span class="val" id="fxamtv"></span></label>
+        <input type="range" id="fxamt" min="0" max="100" value="100">
+      </div>
+      <div class="sub" data-fx="inked spot wash oil">
+        <label>Simplify / brush size <span class="val" id="fxsizev"></span></label>
+        <input type="range" id="fxsize" min="1" max="8" value="4">
+      </div>
+      <div class="sub" data-fx="inked wash">
+        <label>Colour levels <span class="val" id="fxlevv"></span></label>
+        <input type="range" id="fxlev" min="2" max="12" value="6">
+      </div>
+      <div class="sub" data-fx="inked spot">
+        <label>Line weight <span class="val" id="fxewv"></span></label>
+        <input type="range" id="fxew" min="1" max="30" value="12">
+      </div>
+      <div class="sub" data-fx="spot">
+        <label>Ink &amp; paper</label>
+        <div class="row" style="align-items:center">
+          <input id="fxink" class="colorpick" type="color" value="#b4471f">
+          <input id="fxpaper" class="colorpick" type="color" value="#efe3c8">
+          <div class="swatches" id="spotsw"></div>
+        </div>
+      </div>
+
+      <div class="sub">
+        <label class="check"><input type="checkbox" id="fxprint"> Old print — halftone, misregistration, aged paper</label>
+      </div>
+      <div class="sub" data-fx="print">
+        <label>Screen coarseness <span class="val" id="fxdotv"></span></label>
+        <input type="range" id="fxdot" min="60" max="400" value="170">
+      </div>
+      <div class="hint" id="fxhint">Filters run on the GPU, on the cropped panel only — the rest of the cover stays crisp.</div>
     </div>
 
     <div class="row">
@@ -265,12 +316,12 @@ LAKE GENEVA, WI 53147</textarea>
   }
   // off in [0,1] pans the crop along whichever axis is cropped (0.5 = centred).
   // Returns which axis was cropped: 'y' (tall image), 'x' (wide), or '' (exact fit).
-  function drawCover(img,x,y,w,h,off){
+  function drawCover(c,img,x,y,w,h,off){
     off = (off==null)?0.5:Math.max(0,Math.min(1,off));
     const ir=img.width/img.height, br=w/h; let sw,sh,sx,sy,axis='';
     if(ir>br){ sh=img.height; sw=sh*br; sy=0; sx=(img.width-sw)*off; if(sw<img.width-0.5) axis='x'; }
     else { sw=img.width; sh=sw/br; sx=0; sy=(img.height-sh)*off; if(sh<img.height-0.5) axis='y'; }
-    ctx.drawImage(img,sx,sy,sw,sh,x,y,w,h);
+    c.drawImage(img,sx,sy,sw,sh,x,y,w,h);
     return axis;
   }
   function starPath(cx,cy,spikes,outer,inner){
@@ -286,6 +337,256 @@ LAKE GENEVA, WI 53147</textarea>
   // recoloured to cream with transparency (belt, tassels & speckles are holes).
   // Pixel-exact by construction; drawn at the original's size/position.
   function wizard(){ if(wizReady) ctx.drawImage(wizImg, 135, 1379, 117, 126); }
+
+  // ---- art filters (WebGL) ---------------------------------------------
+  // 1978-84 TSR covers are ink line + transparent colour, printed cheaply — not
+  // oil paint. The filters below chase that: contour first, paint second.
+  const AW = 1000, AH = 734;                     // art panel size, matches the frame
+  const srcCv = document.createElement('canvas'); srcCv.width=AW; srcCv.height=AH;
+  const sctx = srcCv.getContext('2d');
+  const glCv = document.createElement('canvas'); glCv.width=AW; glCv.height=AH;
+
+  const VERT = 'attribute vec2 p; varying vec2 uv;' +
+    'void main(){ uv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }';
+
+  const PRE = [
+    'precision highp float;',
+    'uniform sampler2D t; uniform vec2 px; uniform float amt, ew, lev, asp;',
+    'uniform vec3 inkc, papc; uniform float dotsc;',
+    'varying vec2 uv;',
+    'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }',
+    'vec3 sat(vec3 c, float s){ float l=lum(c); return clamp(mix(vec3(l),c,s),0.,1.); }',
+    'float sob(){',
+    '  float tl=lum(texture2D(t,uv+vec2(-1.,-1.)*px*ew).rgb), tc=lum(texture2D(t,uv+vec2(0.,-1.)*px*ew).rgb),',
+    '        tr=lum(texture2D(t,uv+vec2(1.,-1.)*px*ew).rgb), ml=lum(texture2D(t,uv+vec2(-1.,0.)*px*ew).rgb),',
+    '        mr=lum(texture2D(t,uv+vec2(1.,0.)*px*ew).rgb), bl=lum(texture2D(t,uv+vec2(-1.,1.)*px*ew).rgb),',
+    '        bc=lum(texture2D(t,uv+vec2(0.,1.)*px*ew).rgb), br=lum(texture2D(t,uv+vec2(1.,1.)*px*ew).rgb);',
+    '  float gx = tl+2.*ml+bl-tr-2.*mr-br, gy = tl+2.*tc+tr-bl-2.*bc-br;',
+    '  return length(vec2(gx,gy));',
+    '}',
+    'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }',
+    'float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);',
+    '  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }',
+    'vec2 rot2(vec2 p, float a){ float s=sin(a), c=cos(a); return vec2(p.x*c-p.y*s, p.x*s+p.y*c); }',
+    'vec3 post(vec3 c){ return floor(c*lev + 0.5)/lev; }',
+    ''   // trailing newline — a following #define must start its own line
+  ].join('\n');
+
+  // Posterised colour under a hard ink contour — the core B2 / X1 technique.
+  // Runs on the Kuwahara-simplified image, so the contour follows real shape
+  // boundaries instead of tracing every blade of grass.
+  const F_INKED = PRE + [
+    'void main(){',
+    '  vec3 c = texture2D(t,uv).rgb;',
+    '  vec3 o = post(sat(c,1.42));',
+    '  float ink = smoothstep(0.16, 0.55, sob());',
+    '  o = mix(o, vec3(0.06,0.05,0.045), ink*0.92);',
+    '  gl_FragColor = vec4(mix(c,o,amt),1.);',
+    '}'].join('\n');
+
+  // Pen-and-ink line printed in one spot colour on tinted stock (G1 / G2 / D3).
+  // Midtones break into crosshatch so it reads as line art, not a duotone photo.
+  const F_SPOT = PRE + [
+    'float hatch(vec2 p, float a, float f){ return 0.5+0.5*sin((rot2(p,a).x)*f); }',
+    'void main(){',
+    '  vec3 c = texture2D(t,uv).rgb;',
+    '  float l = lum(c);',
+    '  float line = smoothstep(0.14, 0.46, sob());',
+    // gentle ramp: only genuinely dark passages earn ink, so paper stays dominant
+    '  float shade = smoothstep(0.58, 0.16, l) * 0.80;',
+    '  vec2 hp = uv*vec2(asp,1.);',
+    '  float d = 0.0;',
+    '  if(shade > 0.20) d = max(d, step(hatch(hp,0.79,300.), (shade-0.12)*1.15));',
+    '  if(shade > 0.55) d = max(d, step(hatch(hp,-0.79,300.), (shade-0.48)*1.5));',
+    '  d = clamp(max(d*0.88, line), 0., 1.);',
+    '  vec3 o = mix(papc, inkc, d);',
+    '  o *= 0.97 + 0.03*vnoise(uv*vec2(asp,1.)*700.);',
+    '  gl_FragColor = vec4(mix(c,o,amt),1.);',
+    '}'].join('\n');
+
+  // Transparent wash: pigment bleeds off-register, pools dark at shape edges,
+  // and the paper tooth shows through.
+  const F_WASH = PRE + [
+    'void main(){',
+    '  vec3 raw = texture2D(t,uv).rgb;',
+    '  vec2 w = vec2(vnoise(uv*vec2(asp,1.)*7.), vnoise(uv*vec2(asp,1.)*7.+31.7)) - 0.5;',
+    '  vec3 c = texture2D(t, uv + w*px*30.).rgb;',
+    '  vec3 o = post(sat(c,1.34));',
+    // pigment collects where the wash met a boundary and dried
+    '  float pool = smoothstep(0.10, 0.48, sob());',
+    '  o = mix(o, sat(o*0.42,1.55), pool*0.95);',
+    '  float grain = vnoise(uv*vec2(asp,1.)*520.);',
+    '  o *= 0.88 + 0.12*grain;',
+    '  o = mix(o, vec3(0.98,0.955,0.88), 0.12);',
+    '  gl_FragColor = vec4(mix(raw,o,amt),1.);',
+    '}'].join('\n');
+
+  // Kuwahara: each pixel takes the mean of whichever quadrant around it is most
+  // uniform, so flat areas melt into patches while edges stay hard.
+  function f_oil(R){ return PRE + [
+    '#define R ' + R,
+    'void main(){',
+    '  vec3 raw = texture2D(t,uv).rgb;',
+    '  float n = float((R+1)*(R+1));',
+    '  vec3 m0=vec3(0.),m1=vec3(0.),m2=vec3(0.),m3=vec3(0.);',
+    '  vec3 s0=vec3(0.),s1=vec3(0.),s2=vec3(0.),s3=vec3(0.);',
+    '  for(int j=-R;j<=0;j++) for(int i=-R;i<=0;i++){ vec3 c=texture2D(t,uv+vec2(i,j)*px).rgb; m0+=c; s0+=c*c; }',
+    '  for(int j=-R;j<=0;j++) for(int i=0;i<=R;i++){ vec3 c=texture2D(t,uv+vec2(i,j)*px).rgb; m1+=c; s1+=c*c; }',
+    '  for(int j=0;j<=R;j++) for(int i=-R;i<=0;i++){ vec3 c=texture2D(t,uv+vec2(i,j)*px).rgb; m2+=c; s2+=c*c; }',
+    '  for(int j=0;j<=R;j++) for(int i=0;i<=R;i++){ vec3 c=texture2D(t,uv+vec2(i,j)*px).rgb; m3+=c; s3+=c*c; }',
+    '  m0/=n; m1/=n; m2/=n; m3/=n;',
+    '  s0=abs(s0/n-m0*m0); s1=abs(s1/n-m1*m1); s2=abs(s2/n-m2*m2); s3=abs(s3/n-m3*m3);',
+    '  float v0=s0.r+s0.g+s0.b, v1=s1.r+s1.g+s1.b, v2=s2.r+s2.g+s2.b, v3=s3.r+s3.g+s3.b;',
+    '  vec3 o=m0; float v=v0;',
+    '  if(v1<v){ o=m1; v=v1; } if(v2<v){ o=m2; v=v2; } if(v3<v){ o=m3; }',
+    '  gl_FragColor = vec4(mix(raw, sat(o,1.12), amt),1.);',
+    '}'].join('\n'); }
+
+  // Stackable print pass: CMY plates misregister, each screened at its own angle,
+  // over yellowed uncoated stock.
+  const F_PRINT = PRE + [
+    'float scr(float ink, vec2 p, float a){',
+    '  vec2 q = rot2(p, a) * dotsc; vec2 f = fract(q) - 0.5;',
+    '  float r = sqrt(clamp(ink,0.,1.)) * 0.62;',
+    '  return 1.0 - smoothstep(r-0.035, r+0.035, length(f));',
+    '}',
+    'void main(){',
+    '  vec3 raw = texture2D(t,uv).rgb;',
+    '  vec2 o1 = vec2( 1.6, -0.9)*px*amt, o2 = vec2(-1.3, 1.1)*px*amt, o3 = vec2( 0.5, 1.7)*px*amt;',
+    '  float C = 1.0 - texture2D(t, uv+o1).r;',
+    '  float M = 1.0 - texture2D(t, uv+o2).g;',
+    '  float Y = 1.0 - texture2D(t, uv+o3).b;',
+    '  vec2 p = uv*vec2(asp,1.);',
+    '  C = scr(C*0.92, p, 0.262); M = scr(M*0.92, p, 1.309); Y = scr(Y*0.92, p, 0.0);',
+    '  vec3 o = vec3(1.-C, 1.-M, 1.-Y);',
+    '  o *= vec3(0.98, 0.955, 0.88);',
+    '  o = mix(o, vec3(0.90,0.86,0.74), 0.10);',
+    '  o *= 0.95 + 0.05*vnoise(p*900.);',
+    '  gl_FragColor = vec4(mix(raw, o, min(amt,1.0)),1.);',
+    '}'].join('\n');
+
+  // --- tiny GL runner: ping-pong FBOs, last pass lands on the canvas ---
+  let gl = null, glOK = false, quad = null, progs = {}, texs = [], fbos = [], srcTex = null;
+  function glInit(){
+    if(gl !== null) return glOK;
+    gl = glCv.getContext('webgl', {preserveDrawingBuffer:true, premultipliedAlpha:false}) ||
+         glCv.getContext('experimental-webgl', {preserveDrawingBuffer:true});
+    if(!gl){ glOK = false; return false; }
+    quad = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    srcTex = mkTex();
+    for(let i=0;i<2;i++){
+      const tx = mkTex();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,AW,AH,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0);
+      texs.push(tx); fbos.push(fb);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    glOK = true; return true;
+  }
+  function mkTex(){
+    const tx = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tx);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    return tx;
+  }
+  function sh(type, src){
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.warn('shader:', gl.getShaderInfoLog(s)); return null;
+    }
+    return s;
+  }
+  function prog(key, frag){
+    if(progs[key] !== undefined) return progs[key];
+    const v = sh(gl.VERTEX_SHADER, VERT), f = sh(gl.FRAGMENT_SHADER, frag);
+    if(!v || !f){ progs[key] = null; return null; }
+    const p = gl.createProgram();
+    gl.attachShader(p,v); gl.attachShader(p,f); gl.bindAttribLocation(p,0,'p'); gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){ console.warn('link:', gl.getProgramInfoLog(p)); progs[key]=null; return null; }
+    progs[key] = p; return p;
+  }
+  function hex2v(h){
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(h||'')); if(!m) return [1,1,1];
+    const n = parseInt(m[1],16);
+    return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255];
+  }
+  // passes: [{frag, u:{...}}] — runs in order, final one draws to the canvas.
+  function runPasses(passes){
+    gl.viewport(0,0,AW,AH);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcCv);
+    let input = srcTex;
+    for(let i=0;i<passes.length;i++){
+      const last = (i === passes.length-1);
+      const p = prog(passes[i].key, passes[i].frag);
+      if(!p) return false;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, last ? null : fbos[i%2]);
+      gl.useProgram(p);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, input);
+      gl.uniform1i(gl.getUniformLocation(p,'t'), 0);
+      gl.uniform2f(gl.getUniformLocation(p,'px'), 1/AW, 1/AH);
+      gl.uniform1f(gl.getUniformLocation(p,'asp'), AW/AH);
+      const u = passes[i].u || {};
+      for(const k in u){
+        const loc = gl.getUniformLocation(p,k); if(!loc) continue;
+        if(Array.isArray(u[k])) gl.uniform3fv(loc, u[k]); else gl.uniform1f(loc, u[k]);
+      }
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      if(!last) input = texs[i%2];
+    }
+    return true;
+  }
+
+  // Build the (cropped, filtered) art panel, memoised on everything that affects it.
+  let artSeq = 0, fxSig = null, fxAxis = '', fxOut = srcCv;
+  function buildArt(off){
+    const fx = el('fx').value;
+    const printOn = el('fxprint').checked;
+    const sig = [artSeq, Math.round(off*1000), fx, printOn ? 1 : 0,
+                 el('fxamt').value, el('fxsize').value, el('fxlev').value,
+                 el('fxew').value, el('fxink').value, el('fxpaper').value,
+                 el('fxdot').value].join('|');
+    if(sig === fxSig) return fxAxis;
+    fxSig = sig;
+
+    sctx.clearRect(0,0,AW,AH);
+    fxAxis = drawCover(sctx, art, 0, 0, AW, AH, off);
+    fxOut = srcCv;
+    if(fx === 'none' && !printOn) return fxAxis;
+    if(!glInit()){ el('fxhint').textContent = 'WebGL unavailable — filters are switched off in this browser.'; return fxAxis; }
+
+    const amt  = (parseInt(el('fxamt').value,10)||0)/100;
+    const lev  = parseInt(el('fxlev').value,10)||6;
+    const ew   = (parseInt(el('fxew').value,10)||12)/10;
+    const R    = Math.max(1, Math.min(8, parseInt(el('fxsize').value,10)||4));
+    const passes = [];
+    // Simplify first. An illustrator reduces the scene to shapes before drawing a
+    // contour; without this the Sobel just traces photographic noise.
+    if(fx === 'inked' || fx === 'spot' || fx === 'wash')
+      passes.push({key:'oil'+R, frag:f_oil(R), u:{amt:1.0}});
+
+    if(fx === 'inked') passes.push({key:'inked', frag:F_INKED, u:{amt:amt, lev:lev, ew:ew}});
+    else if(fx === 'spot') passes.push({key:'spot', frag:F_SPOT, u:{amt:amt, ew:ew,
+      inkc:hex2v(el('fxink').value), papc:hex2v(el('fxpaper').value)}});
+    else if(fx === 'wash') passes.push({key:'wash', frag:F_WASH, u:{amt:amt, lev:lev, ew:1.4}});
+    else if(fx === 'oil') passes.push({key:'oil'+R, frag:f_oil(R), u:{amt:amt}});
+    if(printOn) passes.push({key:'print', frag:F_PRINT, u:{amt:1.0, dotsc:parseInt(el('fxdot').value,10)||170}});
+    if(passes.length && runPasses(passes)) fxOut = glCv;
+    return fxAxis;
+  }
 
   // ---- main render -----------------------------------------------------
   function render(){
@@ -333,15 +634,17 @@ LAKE GENEVA, WI 53147</textarea>
     ctx.fillStyle='#0c0a08'; ctx.fillRect(artX-6,artY-6,artW+12,artH+12);
     ctx.strokeStyle='#e9dcc4'; ctx.lineWidth=3; ctx.strokeRect(artX-6,artY-6,artW+12,artH+12);
     if(art){
-      ctx.save(); ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
       const off = (parseInt(el('imgpos').value,10) || 50) / 100;
-      const axis = drawCover(art, artX, artY, artW, artH, off); ctx.restore();
+      const axis = buildArt(off);            // crop + filter once, memoised
+      ctx.drawImage(fxOut, artX, artY, artW, artH);
       // show the reposition slider only when the image is actually cropped
       el('imgposgrp').style.display = axis ? 'block' : 'none';
+      el('fxgrp').style.display = 'block';
       el('imgposax').textContent = axis==='y' ? '(drag / slide up ↔ down)'
                                  : axis==='x' ? '(drag / slide left ↔ right)' : '';
     } else {
       el('imgposgrp').style.display = 'none';
+      el('fxgrp').style.display = 'none';
       ctx.fillStyle='#171310'; ctx.fillRect(artX,artY,artW,artH);
       ctx.fillStyle='#6b5f4d'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.font='600 30px system-ui, sans-serif';
@@ -414,8 +717,38 @@ LAKE GENEVA, WI 53147</textarea>
   el('img').addEventListener('change', e=>{
     const f = e.target.files && e.target.files[0]; if(!f) return;
     const fr = new FileReader();
-    fr.onload = () => { const im=new Image(); im.onload=()=>{ art=im; el('imgpos').value=50; render(); }; im.src=fr.result; };
+    fr.onload = () => { const im=new Image(); im.onload=()=>{ art=im; artSeq++; el('imgpos').value=50; render(); }; im.src=fr.result; };
     fr.readAsDataURL(f);
+  });
+
+  // --- filter controls ---
+  const FXCTL = ['fx','fxamt','fxsize','fxlev','fxew','fxink','fxpaper','fxdot'];
+  function fxSync(){
+    const fx = el('fx').value, printOn = el('fxprint').checked;
+    document.querySelectorAll('#fxgrp .sub[data-fx]').forEach(d=>{
+      const want = d.getAttribute('data-fx').split(' ');
+      d.style.display = (want.indexOf('print')>=0 ? printOn : want.indexOf(fx)>=0) ? 'block' : 'none';
+    });
+    el('fxamtv').textContent  = el('fxamt').value + '%';
+    el('fxsizev').textContent = el('fxsize').value + ' px';
+    el('fxlevv').textContent  = el('fxlev').value;
+    el('fxewv').textContent   = (parseInt(el('fxew').value,10)/10).toFixed(1) + '×';
+    el('fxdotv').textContent  = el('fxdot').value + ' cells';
+  }
+  FXCTL.forEach(id => el(id).addEventListener('input', ()=>{ fxSync(); render(); }));
+  el('fx').addEventListener('change', ()=>{ fxSync(); render(); });
+  el('fxprint').addEventListener('change', ()=>{ fxSync(); render(); });
+
+  // period spot-ink / stock pairings lifted from G1, G2, D3 and C1
+  const SPOT = [['#b4471f','#efe3c8'],['#1f4fa8','#f2f2ee'],['#141414','#f0a8c8'],
+                ['#6b3a1c','#f0e2c4'],['#1d6b4a','#eef0e2'],['#7a1030','#f2e6d2']];
+  const spotWrap = document.getElementById('spotsw');
+  SPOT.forEach(pair=>{
+    const d=document.createElement('div'); d.className='sw';
+    d.style.background='linear-gradient(135deg,'+pair[0]+' 50%,'+pair[1]+' 50%)';
+    d.title=pair[0]+' on '+pair[1];
+    d.addEventListener('click',()=>{ el('fxink').value=pair[0]; el('fxpaper').value=pair[1]; render(); });
+    spotWrap.appendChild(d);
   });
 
   // Drag the preview (desktop mouse) to reposition a cropped image; touch uses the slider.
@@ -461,13 +794,18 @@ LAKE GENEVA, WI 53147</textarea>
   el('reset').addEventListener('click', ()=>{
     ids.forEach(id => el(id).value = DEFAULTS[id]);
     el('iggy').checked = false; el('imgpos').value = 50;
-    el('prod').value = rand4(); art=null; el('img').value=''; render();
+    el('fx').value='none'; el('fxprint').checked=false;
+    el('fxamt').value=100; el('fxsize').value=4; el('fxlev').value=6; el('fxew').value=12;
+    el('fxink').value='#b4471f'; el('fxpaper').value='#efe3c8'; el('fxdot').value=170;
+    fxSync();
+    el('prod').value = rand4(); art=null; artSeq++; el('img').value=''; render();
   });
 
   // Fonts may load a beat after first paint; re-render once ready for a faithful match.
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(render);
 
   el('prod').value = rand4();   // random 4-digit product number on load
+  fxSync();
   render();
 })();
 </script>
