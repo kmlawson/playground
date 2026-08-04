@@ -120,8 +120,10 @@ function render(){
     return (order[a.section]-order[b.section]) || codeKey(a.code).localeCompare(codeKey(b.code));
   });
   grid.innerHTML = rows.map(d=>{
+    // grid shows a 440px webp; the full-resolution scan loads only on click
+    const th = d.img ? d.img.replace(/^images\//,'images/thumbs/').replace(/\.(jpg|jpeg|webp|png)$/i,'.webp') : '';
     const thumb = d.img
-      ? `<div class="thumb"><img loading="lazy" src="${d.img}" alt="${esc(d.code)} cover" data-cap="${esc(d.code+' — '+d.title)}"></div>`
+      ? `<div class="thumb"><img loading="lazy" decoding="async" src="${th}" alt="${esc(d.code)} cover" data-full="${esc(d.img)}" data-cap="${esc(d.code+' — '+d.title)}"></div>`
       : `<div class="thumb none">no cover<br>available</div>`;
     return `<div class="card">${thumb}<div class="meta">
       <span class="code">${esc(d.code)}</span>
@@ -136,8 +138,14 @@ function render(){
 [q,fLine,fSec,fSort].forEach(el=>el.addEventListener('input',render));
 // lightbox
 const lb=document.getElementById('lb'), lbimg=document.getElementById('lbimg'), lbcap=document.getElementById('lbcap');
+let lbToken=0;
 grid.addEventListener('click',e=>{ const img=e.target.closest('img'); if(!img) return;
-  lbimg.src=img.src; lbcap.textContent=img.dataset.cap; lb.classList.add('open'); });
+  const my=++lbToken;
+  lbimg.src=img.src;                       // cached thumb paints instantly
+  lbcap.textContent=img.dataset.cap; lb.classList.add('open');
+  const full=img.dataset.full;             // then swap in the full scan
+  if(full){ const hi=new Image(); hi.onload=()=>{ if(my===lbToken) lbimg.src=full; }; hi.src=full; }
+});
 lb.addEventListener('click',()=>lb.classList.remove('open'));
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') lb.classList.remove('open'); });
 render();
